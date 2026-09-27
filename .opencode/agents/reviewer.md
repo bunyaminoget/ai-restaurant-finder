@@ -1,7 +1,6 @@
 ---
 description: Reviews the completed implementation for correctness, architecture, security, regressions, and scope.
 mode: subagent
-model: lmstudio/qwen2.5-coder-7b-instruct
 permission:
   edit: deny
   bash: deny
