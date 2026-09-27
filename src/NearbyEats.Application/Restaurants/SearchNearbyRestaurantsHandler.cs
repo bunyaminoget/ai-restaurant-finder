@@ -5,11 +5,14 @@ namespace NearbyEats.Application.Restaurants;
 public sealed class SearchNearbyRestaurantsHandler
 {
     private readonly IRestaurantSearchProvider _provider;
+    private readonly IRestaurantStore _store;
 
-    public SearchNearbyRestaurantsHandler(IRestaurantSearchProvider provider)
+    public SearchNearbyRestaurantsHandler(IRestaurantSearchProvider provider, IRestaurantStore store)
     {
         ArgumentNullException.ThrowIfNull(provider);
+        ArgumentNullException.ThrowIfNull(store);
         _provider = provider;
+        _store = store;
     }
 
     public async Task<NearbyRestaurantsResult> HandleAsync(
@@ -26,6 +29,17 @@ public sealed class SearchNearbyRestaurantsHandler
         var restaurants = await _provider.SearchNearbyAsync(center, cancellationToken).ConfigureAwait(false);
 
         ArgumentNullException.ThrowIfNull(restaurants);
+
+        // Persist Google results so detail lookups can resolve public ids to
+        // place ids from the database (survives restarts/load balancing).
+        // Filtering, sorting and pagination below operate on the persisted
+        // instances, whose ids match the provider's deterministic ids.
+        if (restaurants.Count > 0)
+        {
+            restaurants = await _store.UpsertAsync(restaurants, cancellationToken).ConfigureAwait(false);
+
+            ArgumentNullException.ThrowIfNull(restaurants);
+        }
 
         var candidates = restaurants
             .Select(r => new NearbyRestaurantDto(

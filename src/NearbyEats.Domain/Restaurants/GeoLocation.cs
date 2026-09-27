@@ -7,6 +7,11 @@ public sealed class GeoLocation
     public double Latitude { get; }
     public double Longitude { get; }
 
+    // EF Core materialization only; application code must use the validating ctor.
+    private GeoLocation()
+    {
+    }
+
     public GeoLocation(double latitude, double longitude)
     {
         if (latitude < -90 || latitude > 90)

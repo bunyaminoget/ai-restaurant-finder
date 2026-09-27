@@ -5,13 +5,13 @@ namespace NearbyEats.Application.Tests.Restaurants;
 
 public sealed class GetRestaurantDetailHandlerTests
 {
-    private sealed class FakeDetailsProvider : IRestaurantDetailsProvider
+    private sealed class FakeStore : IRestaurantStore
     {
         private readonly Func<Guid, Restaurant?> _resolve;
 
         public Guid? LastRequestedId { get; private set; }
 
-        public FakeDetailsProvider(Func<Guid, Restaurant?> resolve)
+        public FakeStore(Func<Guid, Restaurant?> resolve)
         {
             _resolve = resolve;
         }
@@ -22,19 +22,72 @@ public sealed class GetRestaurantDetailHandlerTests
             LastRequestedId = id;
             return Task.FromResult(_resolve(id));
         }
+
+        public Task<Restaurant?> GetByGooglePlaceIdAsync(string googlePlaceId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new NotSupportedException();
+        }
+
+        public Task<IReadOnlyList<Restaurant>> UpsertAsync(IReadOnlyList<Restaurant> restaurants, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new NotSupportedException();
+        }
     }
 
-    private static Restaurant CreateRestaurant(Guid? id = null) => new(
+    private sealed class FakeDetailsProvider : IRestaurantDetailsProvider
+    {
+        private readonly Func<string, Restaurant?> _resolve;
+
+        public string? LastRequestedPlaceId { get; private set; }
+
+        public FakeDetailsProvider(Func<string, Restaurant?> resolve)
+        {
+            _resolve = resolve;
+        }
+
+        public Task<Restaurant?> GetByPlaceIdAsync(string googlePlaceId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            LastRequestedPlaceId = googlePlaceId;
+            return Task.FromResult(_resolve(googlePlaceId));
+        }
+    }
+
+    private static Restaurant CreateRestaurant(Guid? id = null, string? googlePlaceId = "places/test-place-id") => new(
         id ?? Guid.NewGuid(),
         "Test Restaurant",
         new GeoLocation(41.0082, 28.9784),
         4.5,
-        120);
+        120,
+        googlePlaceId);
+
+    private static GetRestaurantDetailHandler CreateHandler(
+        Func<Guid, Restaurant?> resolveStored,
+        Func<string, Restaurant?> resolveDetails,
+        out FakeStore store,
+        out FakeDetailsProvider provider)
+    {
+        store = new FakeStore(resolveStored);
+        provider = new FakeDetailsProvider(resolveDetails);
+        return new GetRestaurantDetailHandler(store, provider);
+    }
+
+    [Fact]
+    public void Ctor_WithNullStore_ThrowsArgumentNullException()
+    {
+        var ex = Assert.Throws<ArgumentNullException>(
+            () => new GetRestaurantDetailHandler(null!, new FakeDetailsProvider(_ => null)));
+
+        Assert.Equal("store", ex.ParamName);
+    }
 
     [Fact]
     public void Ctor_WithNullProvider_ThrowsArgumentNullException()
     {
-        var ex = Assert.Throws<ArgumentNullException>(() => new GetRestaurantDetailHandler(null!));
+        var ex = Assert.Throws<ArgumentNullException>(
+            () => new GetRestaurantDetailHandler(new FakeStore(_ => null), null!));
 
         Assert.Equal("provider", ex.ParamName);
     }
@@ -42,7 +95,7 @@ public sealed class GetRestaurantDetailHandlerTests
     [Fact]
     public async Task HandleAsync_WithNullQuery_ThrowsArgumentNullException()
     {
-        var handler = new GetRestaurantDetailHandler(new FakeDetailsProvider(_ => CreateRestaurant()));
+        var handler = CreateHandler(_ => CreateRestaurant(), _ => CreateRestaurant(), out _, out _);
 
         await Assert.ThrowsAsync<ArgumentNullException>(() => handler.HandleAsync(null!));
     }
@@ -50,55 +103,99 @@ public sealed class GetRestaurantDetailHandlerTests
     [Fact]
     public async Task HandleAsync_WithEmptyId_ThrowsArgumentException()
     {
-        var provider = new FakeDetailsProvider(_ => CreateRestaurant());
-        var handler = new GetRestaurantDetailHandler(provider);
+        var handler = CreateHandler(_ => CreateRestaurant(), _ => CreateRestaurant(), out var store, out var provider);
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(
             () => handler.HandleAsync(new GetRestaurantDetailQuery(Guid.Empty)));
 
         Assert.Equal("query", ex.ParamName);
-        Assert.Null(provider.LastRequestedId);
+        Assert.Null(store.LastRequestedId);
+        Assert.Null(provider.LastRequestedPlaceId);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenStoreMisses_ReturnsNullWithoutCallingProvider()
+    {
+        var id = Guid.NewGuid();
+        var handler = CreateHandler(_ => null, _ => CreateRestaurant(), out var store, out var provider);
+
+        var result = await handler.HandleAsync(new GetRestaurantDetailQuery(id));
+
+        Assert.Null(result);
+        Assert.Equal(id, store.LastRequestedId);
+        Assert.Null(provider.LastRequestedPlaceId);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenStoredRowHasNoPlaceId_ReturnsNullWithoutCallingProvider()
+    {
+        var stored = CreateRestaurant(googlePlaceId: null);
+        var handler = CreateHandler(_ => stored, _ => CreateRestaurant(), out _, out var provider);
+
+        var result = await handler.HandleAsync(new GetRestaurantDetailQuery(stored.Id));
+
+        Assert.Null(result);
+        Assert.Null(provider.LastRequestedPlaceId);
     }
 
     [Fact]
     public async Task HandleAsync_WhenProviderReturnsNull_ReturnsNull()
     {
-        var id = Guid.NewGuid();
-        var provider = new FakeDetailsProvider(_ => null);
-        var handler = new GetRestaurantDetailHandler(provider);
+        var stored = CreateRestaurant();
+        var handler = CreateHandler(_ => stored, _ => null, out _, out var provider);
 
-        var result = await handler.HandleAsync(new GetRestaurantDetailQuery(id));
+        var result = await handler.HandleAsync(new GetRestaurantDetailQuery(stored.Id));
 
         Assert.Null(result);
-        Assert.Equal(id, provider.LastRequestedId);
+        Assert.Equal(stored.GooglePlaceId, provider.LastRequestedPlaceId);
     }
 
     [Fact]
-    public async Task HandleAsync_WhenProviderReturnsRestaurant_MapsAllFields()
+    public async Task HandleAsync_WhenProviderReturnsMismatchedId_ReturnsNull()
     {
-        var restaurant = CreateRestaurant();
-        var handler = new GetRestaurantDetailHandler(new FakeDetailsProvider(_ => restaurant));
+        var stored = CreateRestaurant();
+        var other = CreateRestaurant(googlePlaceId: stored.GooglePlaceId);
+        var handler = CreateHandler(_ => stored, _ => other, out _, out _);
 
-        var result = await handler.HandleAsync(new GetRestaurantDetailQuery(restaurant.Id));
+        var result = await handler.HandleAsync(new GetRestaurantDetailQuery(stored.Id));
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenDetailsResolve_MapsAllFields()
+    {
+        var stored = CreateRestaurant();
+        var fresh = new Restaurant(
+            stored.Id,
+            "Updated Name",
+            new GeoLocation(41.01, 28.98),
+            4.7,
+            250,
+            stored.GooglePlaceId);
+        var handler = CreateHandler(_ => stored, _ => fresh, out _, out var provider);
+
+        var result = await handler.HandleAsync(new GetRestaurantDetailQuery(stored.Id));
 
         Assert.NotNull(result);
-        Assert.Equal(restaurant.Id, result.Id);
-        Assert.Equal(restaurant.Name, result.Name);
-        Assert.Equal(restaurant.Location.Latitude, result.Latitude);
-        Assert.Equal(restaurant.Location.Longitude, result.Longitude);
-        Assert.Equal(restaurant.Rating, result.Rating);
-        Assert.Equal(restaurant.ReviewCount, result.ReviewCount);
+        Assert.Equal(fresh.Id, result.Id);
+        Assert.Equal(fresh.Name, result.Name);
+        Assert.Equal(fresh.Location.Latitude, result.Latitude);
+        Assert.Equal(fresh.Location.Longitude, result.Longitude);
+        Assert.Equal(fresh.Rating, result.Rating);
+        Assert.Equal(fresh.ReviewCount, result.ReviewCount);
+        Assert.Equal(stored.GooglePlaceId, provider.LastRequestedPlaceId);
     }
 
     [Fact]
     public async Task HandleAsync_WhenCancelled_ThrowsOperationCanceledException()
     {
-        var restaurant = CreateRestaurant();
-        var handler = new GetRestaurantDetailHandler(new FakeDetailsProvider(_ => restaurant));
+        var stored = CreateRestaurant();
+        var handler = CreateHandler(_ => stored, _ => stored, out _, out _);
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
         await Assert.ThrowsAsync<OperationCanceledException>(
-            () => handler.HandleAsync(new GetRestaurantDetailQuery(restaurant.Id), cts.Token));
+            () => handler.HandleAsync(new GetRestaurantDetailQuery(stored.Id), cts.Token));
     }
 }

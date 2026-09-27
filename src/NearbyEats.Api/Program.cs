@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Diagnostics;
 using NearbyEats.Api.Restaurants;
 using NearbyEats.Application.Restaurants;
 using NearbyEats.Domain.Restaurants;
+using NearbyEats.Infrastructure.Persistence;
 using NearbyEats.Infrastructure.Restaurants;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,6 +11,7 @@ builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks();
 
 builder.Services.AddGooglePlacesRestaurantSearch(builder.Configuration);
+builder.Services.AddNearbyEatsPersistence(builder.Configuration);
 builder.Services.AddTransient<SearchNearbyRestaurantsHandler>();
 builder.Services.AddTransient<GetRestaurantDetailHandler>();
 

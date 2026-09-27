@@ -42,9 +42,9 @@ public static class GooglePlacesServiceCollectionExtensions
             client.Timeout = TimeSpan.FromSeconds(10);
         });
 
-        // Singleton with a shared instance: the provider keeps an in-process
-        // Guid -> placeId registry populated by nearby search so that detail
-        // lookups can resolve the deterministic ids returned by nearby search.
+        // Stateless (no process-local id registry: detail lookups resolve the
+        // public id to a Google place id through the IRestaurantStore database
+        // lookup first), so a shared Singleton instance is safe.
         services.AddSingleton<GooglePlacesRestaurantSearchProvider>();
         services.AddSingleton<IRestaurantSearchProvider>(static sp => sp.GetRequiredService<GooglePlacesRestaurantSearchProvider>());
         services.AddSingleton<IRestaurantDetailsProvider>(static sp => sp.GetRequiredService<GooglePlacesRestaurantSearchProvider>());

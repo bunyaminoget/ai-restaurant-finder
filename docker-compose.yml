@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: nearbyeats-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nearbyeats
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    ports:
+      - "5432:5432"
+    volumes:
+      - nearbyeats-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d nearbyeats"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  nearbyeats-postgres-data:

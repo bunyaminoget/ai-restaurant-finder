@@ -117,4 +117,38 @@ public sealed class RestaurantTests
 
         Assert.Equal("reviewCount", ex.ParamName);
     }
+
+    [Fact]
+    public void Ctor_WithoutGooglePlaceId_DefaultsToNull()
+    {
+        var restaurant = CreateValid();
+
+        Assert.Null(restaurant.GooglePlaceId);
+    }
+
+    [Fact]
+    public void Ctor_WithGooglePlaceId_SetsProperty()
+    {
+        var restaurant = new Restaurant(
+            Guid.NewGuid(),
+            "Test Restaurant",
+            ValidLocation(),
+            4.5,
+            10,
+            "ChIJN1t_tDeuEmsRUsoyG83frY4");
+
+        Assert.Equal("ChIJN1t_tDeuEmsRUsoyG83frY4", restaurant.GooglePlaceId);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("   ")]
+    public void Ctor_WithNullEmptyOrWhitespaceGooglePlaceId_ThrowsArgumentException(string? googlePlaceId)
+    {
+        var ex = Assert.Throws<ArgumentException>(
+            () => new Restaurant(Guid.NewGuid(), "Test Restaurant", ValidLocation(), 4.5, 10, googlePlaceId));
+
+        Assert.Equal("googlePlaceId", ex.ParamName);
+    }
 }
