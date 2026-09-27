@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { NearbyList } from "./components/NearbyList";
 import { RestaurantDetailPage } from "./components/RestaurantDetailPage";
+import { RestaurantMap, type MapCenter } from "./components/map/RestaurantMap";
+import type { NearbyRestaurant } from "./api/types";
 import "./App.css";
 
 const DEFAULT_LAT = 41.0082; // İstanbul
@@ -10,9 +12,27 @@ export function App() {
   const [latitudeInput, setLatitudeInput] = useState(String(DEFAULT_LAT));
   const [longitudeInput, setLongitudeInput] = useState(String(DEFAULT_LNG));
   const [formError, setFormError] = useState("");
-  const [applied, setApplied] = useState({ latitude: DEFAULT_LAT, longitude: DEFAULT_LNG });
+  const [applied, setApplied] = useState<MapCenter>({ latitude: DEFAULT_LAT, longitude: DEFAULT_LNG });
   const [selectedId, setSelectedId] = useState<string>("");
   const [manualId, setManualId] = useState("");
+  const [mapRestaurants, setMapRestaurants] = useState<NearbyRestaurant[]>([]);
+
+  /**
+   * Harita tıklaması: seçim noktasını state'te tut, form input'larıyla
+   * senkronla ve mevcut nearby akışını tetikle (applied -> NearbyList
+   * fetcher -> liste + harita marker'ları güncellenir).
+   */
+  const handleMapClick = (center: MapCenter) => {
+    setApplied(center);
+    setLatitudeInput(String(center.latitude));
+    setLongitudeInput(String(center.longitude));
+    setFormError("");
+  };
+
+  const handleSelect = (id: string) => {
+    setSelectedId(id);
+    setManualId(id);
+  };
 
   return (
     <main className="layout">
@@ -88,6 +108,18 @@ export function App() {
         </form>
       </section>
 
+      <section aria-label="Harita" className="card">
+        <h2>Harita</h2>
+        <p id="map-hint">Arama konumunu değiştirmek için haritaya tıklayın.</p>
+        <RestaurantMap
+          center={applied}
+          restaurants={mapRestaurants}
+          selectedId={selectedId}
+          onMapClick={handleMapClick}
+          onSelect={handleSelect}
+        />
+      </section>
+
       <div className="columns">
         <section aria-label="Yakındaki restoranlar" className="card">
           <h2>Yakındakiler</h2>
@@ -95,10 +127,8 @@ export function App() {
             latitude={applied.latitude}
             longitude={applied.longitude}
             selectedId={selectedId}
-            onSelect={(id) => {
-              setSelectedId(id);
-              setManualId(id);
-            }}
+            onSelect={handleSelect}
+            onData={setMapRestaurants}
           />
         </section>
 

@@ -82,3 +82,16 @@ label {
   cursor: pointer;
   text-decoration: underline;
 }
+
+/* Leaflet haritası açık yükseklik ister; seçim marker'ı divIcon kullanır. */
+.map-container {
+  height: 420px;
+  width: 100%;
+  border-radius: 8px;
+  z-index: 0;
+}
+
+.selection-marker {
+  background: none;
+  border: none;
+}

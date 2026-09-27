@@ -7,10 +7,16 @@ interface Props {
   longitude: number;
   onSelect: (id: string) => void;
   selectedId?: string;
+  /**
+   * Başarılı nearby yanıtındaki öğeleri üst bileşene bildirir.
+   * App bunu harita marker'larını beslemek için kullanır; tek API
+   * çağrısıyla liste + harita aynı veriyle güncellenir.
+   */
+  onData?: (items: NearbyRestaurant[]) => void;
 }
 
 /** Minimal nearby list used only as an entry point into the detail screen. */
-export function NearbyList({ latitude, longitude, onSelect, selectedId }: Props) {
+export function NearbyList({ latitude, longitude, onSelect, selectedId, onData }: Props) {
   const [items, setItems] = useState<NearbyRestaurant[]>([]);
   const [state, setState] = useState<"loading" | "error" | "empty" | "ready">("loading");
   const [message, setMessage] = useState("");
@@ -22,6 +28,7 @@ export function NearbyList({ latitude, longitude, onSelect, selectedId }: Props)
       .then((response) => {
         if (controller.signal.aborted) return;
         setItems(response.items);
+        onData?.(response.items);
         setState(response.items.length === 0 ? "empty" : "ready");
       })
       .catch((error: unknown) => {
@@ -31,7 +38,7 @@ export function NearbyList({ latitude, longitude, onSelect, selectedId }: Props)
         setMessage(error instanceof ApiError ? error.message : "Beklenmeyen bir hata oluştu.");
       });
     return () => controller.abort();
-  }, [latitude, longitude]);
+  }, [latitude, longitude, onData]);
 
   if (state === "loading") return <p role="status">Yakındaki restoranlar yükleniyor…</p>;
   if (state === "error") return <p role="alert">Liste yüklenemedi: {message}</p>;
