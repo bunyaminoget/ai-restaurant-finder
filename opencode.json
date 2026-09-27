@@ -30,6 +30,11 @@
           "test": "allow"
         }
       }
-    }
+    },
+    "reviewer": {
+    "mode": "subagent",
+    "model": "opencode/mimo-v2.6-flash-free",
+    "prompt": "{file:./.opencode/agents/reviewer.md}"
+  }
   }
 }

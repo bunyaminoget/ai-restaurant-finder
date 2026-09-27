@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Diagnostics;
 using NearbyEats.Api.Restaurants;
 using NearbyEats.Application.Restaurants;
 using NearbyEats.Domain.Restaurants;
@@ -10,8 +11,56 @@ builder.Services.AddHealthChecks();
 
 builder.Services.AddGooglePlacesRestaurantSearch(builder.Configuration);
 builder.Services.AddTransient<SearchNearbyRestaurantsHandler>();
+builder.Services.AddTransient<GetRestaurantDetailHandler>();
 
 var app = builder.Build();
+
+// Unhandled provider/infrastructure failures (missing API key, upstream Google
+// errors) must surface as JSON ProblemDetails, not the default HTML error page.
+// Explicit 400/404 plain-text responses below are unaffected: they do not throw.
+app.UseExceptionHandler(exceptionHandlerApp => exceptionHandlerApp.Run(async context =>
+{
+    var exception = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+    var logger = context.RequestServices
+        .GetService<ILoggerFactory>()
+        ?.CreateLogger("GlobalExceptionHandler");
+
+    // Canceled requests (OperationCanceledException covers TaskCanceledException,
+    // e.g. HttpClient timeouts) must not surface as 500. When the client went
+    // away, never attempt to write a ProblemDetails body to a dead connection.
+    if (exception is OperationCanceledException)
+    {
+        if (context.RequestAborted.IsCancellationRequested || context.Response.HasStarted)
+        {
+            logger?.LogWarning(exception, "Request was canceled by the client; skipping error response.");
+            return;
+        }
+
+        logger?.LogWarning(exception, "Upstream restaurant data provider request timed out or was canceled.");
+        await Results.Problem(title: "Restaurant data provider timed out.", statusCode: StatusCodes.Status504GatewayTimeout).ExecuteAsync(context).ConfigureAwait(false);
+        return;
+    }
+
+    var (statusCode, title) = exception switch
+    {
+        InvalidOperationException => (StatusCodes.Status503ServiceUnavailable, "Restaurant data provider is not configured."),
+        HttpRequestException => (StatusCodes.Status502BadGateway, "Restaurant data provider is temporarily unavailable."),
+        _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred.")
+    };
+
+    // The exception message may carry the upstream error body; keep it in
+    // server logs only, never in the ProblemDetails response.
+    if (exception is HttpRequestException)
+    {
+        logger?.LogWarning(exception, "Restaurant data provider request failed with {StatusCode}.", statusCode);
+    }
+    else
+    {
+        logger?.LogError(exception, "Unhandled error serving request with {StatusCode}.", statusCode);
+    }
+
+    await Results.Problem(title: title, statusCode: statusCode).ExecuteAsync(context).ConfigureAwait(false);
+}));
 
 if (app.Environment.IsDevelopment())
 {
@@ -103,6 +152,26 @@ app.MapGet("/api/restaurants/nearby", async (
             result.HasNextPage));
 
     return Results.Ok(response);
+});
+
+app.MapGet("/api/restaurants/{id}", async (
+    string id,
+    GetRestaurantDetailHandler handler,
+    CancellationToken cancellationToken) =>
+{
+    if (!Guid.TryParse(id, out var restaurantId) || restaurantId == Guid.Empty)
+    {
+        return Results.BadRequest("Id must be a valid non-empty GUID.");
+    }
+
+    var dto = await handler.HandleAsync(new GetRestaurantDetailQuery(restaurantId), cancellationToken).ConfigureAwait(false);
+
+    if (dto is null)
+    {
+        return Results.NotFound($"Restaurant with id '{restaurantId}' was not found.");
+    }
+
+    return Results.Ok(RestaurantDetailResponse.FromDto(dto));
 });
 
 app.Run();
