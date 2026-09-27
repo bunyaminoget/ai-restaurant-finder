@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/NearbyEats.Api/NearbyEats.Api.csproj" />
+    <Project Path="src/NearbyEats.Application/NearbyEats.Application.csproj" />
+    <Project Path="src/NearbyEats.Domain/NearbyEats.Domain.csproj" />
+    <Project Path="src/NearbyEats.Infrastructure/NearbyEats.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/NearbyEats.Application.Tests/NearbyEats.Application.Tests.csproj" />
+    <Project Path="tests/NearbyEats.Domain.Tests/NearbyEats.Domain.Tests.csproj" />
+  </Folder>
+</Solution>

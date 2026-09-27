@@ -1,0 +1,6 @@
+@NearbyEats.Api_HostAddress = http://localhost:5038
+
+GET {{NearbyEats.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
